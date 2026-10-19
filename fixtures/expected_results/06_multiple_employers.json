@@ -1,0 +1,5 @@
+{
+  "scenario": "Multiple possible employers",
+  "expected_status": "multiple_salary_candidates",
+  "requires_human_review": true
+}

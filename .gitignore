@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment variables & secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Celery & Redis
+celerybeat-schedule
+celerybeat.pid
+
+# Uploaded Files & Private storage
+storage/uploads/*
+!storage/uploads/.gitkeep
+storage/renders/*
+!storage/renders/.gitkeep
+
+# Bank Statement PDFs & Customer Data
+*.pdf
+!fixtures/synthetic_statements/*.pdf
+*.xlsx
+
+# Benchmarks & temporary tools
+CrystalDiskMark*

@@ -1,0 +1,7 @@
+{
+  "scenario": "Employer aliases",
+  "expected_status": "likely_salary",
+  "expected_employer": "ACME TECH",
+  "expected_months_count": 3,
+  "requires_human_review": false
+}

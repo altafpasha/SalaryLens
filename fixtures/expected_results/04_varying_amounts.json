@@ -1,0 +1,8 @@
+{
+  "scenario": "Slightly varying salary amounts (overtime/bonus)",
+  "expected_status": "likely_salary",
+  "expected_employer": "GLOBEX CORP",
+  "expected_months_count": 3,
+  "amount_variation_pct_max": 10.0,
+  "requires_human_review": false
+}

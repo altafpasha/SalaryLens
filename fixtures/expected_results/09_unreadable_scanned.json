@@ -1,0 +1,4 @@
+{
+  "scenario": "Unreadable or scanned document requiring vision/OCR",
+  "expected_is_scanned": true
+}

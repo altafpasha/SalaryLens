@@ -1,0 +1,108 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: salarylens-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: salarylens
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d salarylens"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: salarylens-redis
+    restart: always
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: salarylens-api
+    restart: always
+    ports:
+      - "8001:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgrespassword@postgres:5432/salarylens
+      DATABASE_SYNC_URL: postgresql+psycopg2://postgres:postgrespassword@postgres:5432/salarylens
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      CELERY_TASK_ALWAYS_EAGER: "false"
+      STORAGE_ROOT: /app/storage
+      UPLOAD_DIR: /app/storage/uploads
+      RENDER_DIR: /app/storage/renders
+    volumes:
+      - storage_data:/app/storage
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      - ./tests:/app/tests
+      - ./scripts:/app/scripts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: salarylens-worker
+    restart: always
+    command: ["celery", "-A", "app.workers.celery_app.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.workers.celery_app.celery_app inspect ping || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgrespassword@postgres:5432/salarylens
+      DATABASE_SYNC_URL: postgresql+psycopg2://postgres:postgrespassword@postgres:5432/salarylens
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      CELERY_TASK_ALWAYS_EAGER: "false"
+      STORAGE_ROOT: /app/storage
+      UPLOAD_DIR: /app/storage/uploads
+      RENDER_DIR: /app/storage/renders
+    volumes:
+      - storage_data:/app/storage
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      - ./tests:/app/tests
+      - ./scripts:/app/scripts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  storage_data:

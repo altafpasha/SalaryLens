@@ -1,0 +1,5 @@
+{
+  "scenario": "Reversed transaction detection",
+  "expected_status": "likely_salary",
+  "reversals_count": 2
+}

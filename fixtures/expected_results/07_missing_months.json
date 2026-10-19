@@ -1,0 +1,8 @@
+{
+  "scenario": "Missing salary months",
+  "expected_status": "possible_salary",
+  "expected_missing_months": [
+    "2026-04"
+  ],
+  "requires_human_review": true
+}
