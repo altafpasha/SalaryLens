@@ -38,12 +38,29 @@ CRITICAL RULES:
 4. If multiple competing employers are detected, set status to 'multiple_salary_candidates' and requires_human_review to true.
 5. If credits are insufficient (e.g. only 1 transaction across 3 months), set status to 'insufficient_evidence'.
 6. Do NOT make or imply loan approval or credit risk decisions.
-7. Return strictly valid JSON adhering to the JevDecisionResponse schema.
-8. Keep explanation and uncertainties concise (1-2 sentences). Do not output markdown or explanations outside the JSON object.
+7. Return strictly valid JSON adhering to the JevDecisionResponse schema with ONLY these fields:
+   {
+     "status": "likely_salary" | "possible_salary" | "multiple_salary_candidates" | "insufficient_evidence",
+     "employer_candidate": "Identified canonical employer name or null",
+     "supporting_transaction_ids": ["uuid-1", "uuid-2"],
+     "supporting_months": ["YYYY-MM"],
+     "reason_codes": ["code1"],
+     "explanation": "1-2 sentence concise explanation",
+     "uncertainties": ["risk or uncertainty"],
+     "requires_human_review": true or false
+   }
+8. DO NOT echo, repeat, or include candidate_transactions or candidate_groups or 'evidence' in your JSON output.
+9. Keep explanation and uncertainties concise (1-2 sentences). Do not output markdown or text outside the JSON object.
 """
 
-    def __init__(self, client: Optional[OpenRouterClient] = None):
-        self.client = client or OpenRouterClient()
+    def __init__(self, client: Any = None):
+        if client is not None:
+            self.client = client
+        elif getattr(settings, "LOCAL_LLM_PROVIDER", "ollama") != "openrouter":
+            from app.services.llm.client import LocalLLMClient
+            self.client = LocalLLMClient()
+        else:
+            self.client = OpenRouterClient()
 
     @classmethod
     def verify_grounding(
@@ -124,6 +141,19 @@ CRITICAL RULES:
                 requires_human_review = True
                 uncertainties.append(
                     f"Overrode model decision to '{financial_status}' based on authoritative Python financial constraints."
+                )
+        elif financial_status in ["likely_salary", "possible_salary"] and status_val in ["insufficient_evidence", "analysis_failed"]:
+            if candidate_tx_list:
+                status_val = financial_status
+                if not verified_ids:
+                    verified_ids = [t["id"] for t in candidate_tx_list if "id" in t]
+                if not decision.employer_candidate:
+                    for t in candidate_tx_list:
+                        if t.get("candidate_employer"):
+                            decision.employer_candidate = t["candidate_employer"]
+                            break
+                uncertainties.append(
+                    f"Aligned model decision with authoritative deterministic financial engine ('{financial_status}')."
                 )
 
         # If zero supporting transaction IDs verified and status claims likely_salary, downgrade

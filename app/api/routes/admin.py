@@ -3,7 +3,7 @@ SalaryLens AI by CodeSec — Admin Model Catalog & AI Usage Routes
 """
 import uuid
 from decimal import Decimal
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +11,13 @@ from app.api.dependencies import get_current_user_and_org, get_db_session, requi
 from app.core.config import settings
 from app.models.model_usage import ModelUsageEvent
 from app.models.user import User
-from app.schemas.admin import AdminModelsResponse, AdminUsageMetrics, ModelInfoItem
+from app.schemas.admin import (
+    AdminModelsResponse,
+    AdminUsageMetrics,
+    EngineSettingsResponse,
+    EngineSettingsUpdate,
+    ModelInfoItem,
+)
 from app.services.openrouter.pricing import DEFAULT_PRICING_REGISTRY
 
 router = APIRouter(prefix="/admin", tags=["Admin & AI Governance"])
@@ -103,4 +109,61 @@ async def get_admin_usage(
         average_latency_ms=round(avg_latency, 2),
         usage_by_stage=stage_breakdown,
         usage_by_model=model_breakdown,
+    )
+
+
+@router.get(
+    "/engine-settings",
+    response_model=EngineSettingsResponse,
+    summary="Active OCR and Model Engine Settings",
+    description="Returns current OCR engine, local LLM provider, and active model parameters.",
+)
+async def get_engine_settings(
+    user_context: tuple[User, uuid.UUID, str] = Depends(require_role("agent")),
+) -> EngineSettingsResponse:
+    return EngineSettingsResponse(
+        ocr_engine=settings.OCR_ENGINE,
+        local_llm_provider=settings.LOCAL_LLM_PROVIDER,
+        local_llm_model=settings.LOCAL_LLM_MODEL,
+        salary_finder_model=settings.SALARY_FINDER_MODEL,
+        decision_model=settings.DECISION_MODEL,
+    )
+
+
+@router.patch(
+    "/engine-settings",
+    response_model=EngineSettingsResponse,
+    summary="Update Active OCR and Model Engine Settings",
+    description="Modifies active OCR engine (e.g. hybrid_indra) and extraction models in runtime memory.",
+)
+async def update_engine_settings(
+    payload: EngineSettingsUpdate,
+    user_context: tuple[User, uuid.UUID, str] = Depends(require_role("agent")),
+) -> EngineSettingsResponse:
+    if payload.ocr_engine is not None:
+        if payload.ocr_engine not in ["hybrid_indra", "indra", "native"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid OCR engine '{payload.ocr_engine}'. Allowed: ['hybrid_indra', 'indra', 'native']",
+            )
+        settings.OCR_ENGINE = payload.ocr_engine
+
+    if payload.local_llm_provider is not None:
+        settings.LOCAL_LLM_PROVIDER = payload.local_llm_provider
+
+    if payload.local_llm_model is not None:
+        settings.LOCAL_LLM_MODEL = payload.local_llm_model
+
+    if payload.salary_finder_model is not None:
+        settings.SALARY_FINDER_MODEL = payload.salary_finder_model
+
+    if payload.decision_model is not None:
+        settings.DECISION_MODEL = payload.decision_model
+
+    return EngineSettingsResponse(
+        ocr_engine=settings.OCR_ENGINE,
+        local_llm_provider=settings.LOCAL_LLM_PROVIDER,
+        local_llm_model=settings.LOCAL_LLM_MODEL,
+        salary_finder_model=settings.SALARY_FINDER_MODEL,
+        decision_model=settings.DECISION_MODEL,
     )

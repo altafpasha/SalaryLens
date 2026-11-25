@@ -126,6 +126,22 @@ async def test_full_api_workflow(client: httpx.AsyncClient):
     assert dash_data["total_statements_processed"] == 1
     assert Decimal(str(dash_data["average_monthly_salary_usd"])) > 0
 
+    # 13. Check Engine Settings (GET and PATCH)
+    settings_resp = await client.get("/api/v1/admin/engine-settings", headers=headers)
+    assert settings_resp.status_code == 200
+    s_data = settings_resp.json()
+    assert s_data["ocr_engine"] in ["hybrid_indra", "indra", "native"]
+    assert "qwen2.5:1.5b" in s_data["available_local_models"]
+
+    patch_resp = await client.patch(
+        "/api/v1/admin/engine-settings",
+        json={"ocr_engine": "hybrid_indra", "local_llm_model": "qwen2.5:1.5b"},
+        headers=headers,
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["ocr_engine"] == "hybrid_indra"
+    assert patch_resp.json()["local_llm_model"] == "qwen2.5:1.5b"
+
 
 @pytest.mark.asyncio
 async def test_cross_tenant_access_isolation(client: httpx.AsyncClient):

@@ -103,6 +103,7 @@ class AIResponseCache:
         try:
             orig_input = cached_data.get("input_tokens", 0)
             orig_output = cached_data.get("output_tokens", 0)
+            is_sim = bool(cached_data.get("is_simulated", False) or (isinstance(cached_data.get("raw_response"), dict) and cached_data.get("raw_response", {}).get("simulated", False)))
             return AIModelCallResult(
                 model_name=cached_data.get("model_name", "cached-model"),
                 actual_model=cached_data.get("model_name", "cached-model"),
@@ -116,7 +117,7 @@ class AIResponseCache:
                 estimated_cost_usd=Decimal("0.00"),
                 latency_ms=1,
                 retry_count=0,
-                is_simulated=False,
+                is_simulated=is_sim,
                 success=True,
                 is_cache_hit=True,
             )
@@ -146,6 +147,7 @@ class AIResponseCache:
             "parsed_json": result.parsed_json,
             "input_tokens": result.input_tokens,
             "output_tokens": result.output_tokens,
+            "is_simulated": result.is_simulated,
         }
 
         # 1. Save to Redis

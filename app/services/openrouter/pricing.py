@@ -13,6 +13,10 @@ DEFAULT_PRICING_REGISTRY: Dict[str, Tuple[Decimal, Decimal]] = {
     "openai/gpt-4o": (Decimal("2.50"), Decimal("10.00")),
     "openai/gpt-4o-mini": (Decimal("0.15"), Decimal("0.60")),
     "openai/gpt-4.1-mini": (Decimal("0.20"), Decimal("0.80")),
+    # Google Free Tier Models
+    "google/gemma-4-31b-it:free": (Decimal("0.00"), Decimal("0.00")),
+    "google/gemma-2-9b-it:free": (Decimal("0.00"), Decimal("0.00")),
+    "google/gemma-7b-it:free": (Decimal("0.00"), Decimal("0.00")),
     # OpenRouter Configured Models
     "openai/gpt-6-luna": (Decimal("1.00"), Decimal("3.00")),
     "typesafe/jev-router": (Decimal("0.50"), Decimal("1.50")),
@@ -36,6 +40,9 @@ class ModelPricingRegistry:
         input_tokens: int,
         output_tokens: int
     ) -> Decimal:
+        if model_name.endswith(":free"):
+            return Decimal("0.000000")
+
         pricing = DEFAULT_PRICING_REGISTRY.get(model_name, DEFAULT_PRICING_REGISTRY["default"])
         input_rate_per_1m, output_rate_per_1m = pricing
 

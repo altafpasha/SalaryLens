@@ -312,11 +312,11 @@ class TransactionFilterService:
             )
 
         # 5. Amount Threshold Check (for low-value informal / P2P UPI transfers)
-        currency = tx.get("currency", "USD")
-        if currency == "INR":
+        currency = tx.get("currency") or "INR"
+        if currency in ("INR", "USD"):
             min_threshold = Decimal(str(settings.SALARY_PREFILTER_MIN_AMOUNT_INR))
         else:
-            min_threshold = Decimal(str(settings.SALARY_PREFILTER_MIN_AMOUNT_USD))
+            min_threshold = Decimal(str(settings.SALARY_PREFILTER_MIN_AMOUNT_INR))
 
         credit_val = credit if credit is not None else Decimal("0.00")
         if credit_val < min_threshold:
@@ -389,11 +389,17 @@ class TransactionFilterService:
                 if tx.get("category") in ["Interest Credit", "Reversal / Refund"]:
                     continue
                 c_amt = tx.get("credit_amount")
-                if c_amt is not None and c_amt > Decimal("0.00"):
+                # Require credit to be at least 1,000 INR / USD to be considered an employer payroll candidate
+                if c_amt is not None and c_amt >= Decimal("1000.00"):
                     raw_desc = tx.get("raw_description") or tx.get("description") or ""
                     clean_sender = EmployerNormalizer.extract_clean_employer_name(raw_desc)
                     tx_date = str(tx.get("transaction_date", ""))[:7]  # YYYY-MM
-                    if clean_sender and len(clean_sender) >= 3 and len(tx_date) == 7:
+                    if (
+                        clean_sender
+                        and len(clean_sender) >= 3
+                        and clean_sender not in ("UNLABELED TRANSACTION", "UNLABELED")
+                        and len(tx_date) == 7
+                    ):
                         sender_months.setdefault(clean_sender, set()).add(tx_date)
 
         # Find senders appearing across 2 or more distinct statement months

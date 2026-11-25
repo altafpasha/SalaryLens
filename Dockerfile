@@ -1,5 +1,5 @@
 # Multi-stage production Dockerfile for SalaryLens AI by CodeSec
-FROM python:3.12-slim as base
+FROM python:3.12-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

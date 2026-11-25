@@ -57,7 +57,7 @@ async def get_dashboard_summary(
     )
     pending_reviews = pending_reviews_q.scalar() or 0
 
-    # Average monthly salary across primary candidate groups
+    # Average monthly salary across primary candidate groups (or detected employers)
     primary_groups_q = await db.execute(
         select(func.avg(SalaryCandidateGroup.average_amount)).where(
             SalaryCandidateGroup.organization_id == org_id,
@@ -65,10 +65,22 @@ async def get_dashboard_summary(
         )
     )
     avg_salary_val = primary_groups_q.scalar()
+    if avg_salary_val is None:
+        detected_emps = [r.detected_employer for r in runs if r.detected_employer]
+        if detected_emps:
+            det_q = await db.execute(
+                select(func.avg(SalaryCandidateGroup.average_amount)).where(
+                    SalaryCandidateGroup.organization_id == org_id,
+                    SalaryCandidateGroup.employer_name.in_(detected_emps),
+                )
+            )
+            avg_salary_val = det_q.scalar()
     avg_salary = Decimal(str(round(avg_salary_val, 2))) if avg_salary_val is not None else Decimal("0.00")
 
+    spend_quant = total_spend.quantize(Decimal("0.0001"))
     return DashboardSummaryResponse(
         total_statements_processed=total_statements,
+        total_statements=total_statements,
         likely_salary_count=likely_count,
         possible_salary_count=possible_count,
         multiple_candidates_count=multiple_count,
@@ -76,5 +88,7 @@ async def get_dashboard_summary(
         requires_human_review_count=human_review_count,
         pending_reviews_count=pending_reviews,
         average_monthly_salary_usd=avg_salary,
-        total_ai_spend_usd=total_spend.quantize(Decimal("0.0001")),
+        average_salary_usd=avg_salary,
+        total_ai_spend_usd=spend_quant,
+        total_spend_usd=spend_quant,
     )

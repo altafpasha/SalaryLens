@@ -3,7 +3,7 @@ SalaryLens AI by CodeSec — Salary Finder Transaction Extraction Service
 """
 import uuid
 from decimal import Decimal
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 from app.core.config import settings
 from app.schemas.openrouter import AIModelCallResult, ExtractedRawTransaction, ExtractedStatementPayload
 from app.services.openrouter.client import OpenRouterClient
@@ -46,8 +46,14 @@ For each transaction return:
 - confidence: float 0.0-1.0
 Output strictly JSON: {"candidates": [...]}"""
 
-    def __init__(self, client: OpenRouterClient = None):
-        self.client = client or OpenRouterClient()
+    def __init__(self, client: Any = None):
+        if client is not None:
+            self.client = client
+        elif getattr(settings, "LOCAL_LLM_PROVIDER", "ollama") != "openrouter":
+            from app.services.llm.client import LocalLLMClient
+            self.client = LocalLLMClient()
+        else:
+            self.client = OpenRouterClient()
 
     async def extract_transactions(
         self,
@@ -99,7 +105,7 @@ Output strictly JSON: {"candidates": [...]}"""
                 "raw_description": t.get("description"),
                 "credit_amount": t.get("credit_amount"),
                 "debit_amount": t.get("debit_amount"),
-                "currency": t.get("currency", "USD"),
+                "currency": t.get("currency", "INR"),
             }
             filt_res = TransactionFilterService.classify_and_filter(tx_dict)
             if filt_res.included_in_salary_analysis:
@@ -115,7 +121,7 @@ Output strictly JSON: {"candidates": [...]}"""
                     credit_amount=t.get("credit_amount"),
                     debit_amount=t.get("debit_amount"),
                     balance=t.get("balance"),
-                    currency=t.get("currency", "USD"),
+                    currency=t.get("currency", "INR"),
                     page_number=t.get("page_number", 1),
                     is_salary_candidate=False,
                     confidence=0.0,
@@ -251,6 +257,10 @@ Output strictly JSON: {"candidates": [...]}"""
                 is_cand = True
                 confidence = max(confidence, 0.90)
 
+            from app.services.salary_detection.normalizer import EmployerNormalizer
+            if is_cand and not potential_emp:
+                potential_emp = EmployerNormalizer.extract_clean_employer_name(t.get("description") or "")
+
             all_raw_txs.append(
                 ExtractedRawTransaction(
                     transaction_date=str(t.get("transaction_date")),
@@ -258,7 +268,7 @@ Output strictly JSON: {"candidates": [...]}"""
                     credit_amount=t.get("credit_amount"),
                     debit_amount=t.get("debit_amount"),
                     balance=t.get("balance"),
-                    currency=t.get("currency", "USD"),
+                    currency=t.get("currency", "INR"),
                     page_number=t.get("page_number", 1),
                     potential_employer=potential_emp,
                     employer_aliases=aliases,
@@ -267,6 +277,26 @@ Output strictly JSON: {"candidates": [...]}"""
                     notes=clf.get("notes"),
                 )
             )
+
+        # Cross-transaction candidate propagation for matching employers across recurring months
+        from app.services.salary_detection.normalizer import EmployerNormalizer
+        candidate_employers = {
+            EmployerNormalizer.extract_clean_employer_name(tx.potential_employer or tx.description)
+            for tx in all_raw_txs
+            if tx.is_salary_candidate and (tx.potential_employer or "SALARY" in tx.description.upper() or "PAYROLL" in tx.description.upper())
+        }
+        candidate_employers = {e for e in candidate_employers if len(e) >= 3}
+
+        if candidate_employers:
+            for tx in all_raw_txs:
+                if tx.credit_amount and tx.credit_amount > 0 and not tx.is_salary_candidate:
+                    norm_name = EmployerNormalizer.extract_clean_employer_name(tx.description)
+                    for cand_emp in candidate_employers:
+                        if cand_emp and EmployerNormalizer.are_employers_similar(norm_name, cand_emp):
+                            tx.is_salary_candidate = True
+                            tx.potential_employer = cand_emp
+                            tx.confidence = max(tx.confidence, 0.85)
+                            break
 
         payload = ExtractedStatementPayload(transactions=all_raw_txs)
         return payload, combined_usage

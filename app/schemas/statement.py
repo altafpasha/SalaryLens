@@ -4,7 +4,7 @@ SalaryLens AI by CodeSec — Statement, Transaction, and Review Schemas
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -17,6 +17,26 @@ class StatementUploadResponse(BaseModel):
     status: str
     is_demo: bool
     created_at: datetime
+
+
+class StatementListItem(BaseModel):
+    statement_id: uuid.UUID
+    filename: str
+    file_size_bytes: int
+    page_count: int
+    duration_months: Optional[int] = None
+    status: str
+    is_scanned: bool = False
+    workbook_status: Optional[str] = None
+    total_transactions_count: Optional[int] = 0
+    included_in_salary_count: Optional[int] = 0
+    excluded_from_salary_count: Optional[int] = 0
+    detected_employer: Optional[str] = None
+    salary_status: Optional[str] = None
+    average_salary: Optional[Decimal] = None
+    currency: Optional[str] = "INR"
+    created_at: datetime
+    updated_at: datetime
 
 
 class StatementStatusResponse(BaseModel):
@@ -94,6 +114,13 @@ class StatementResultsResponse(BaseModel):
     total_ai_cost_usd: Decimal
     total_tokens: int
     is_demo: bool
+    currency: str = "INR"
+    confidence_score: Optional[int] = 85
+    estimated_monthly_salary: Optional[Decimal] = None
+    salary_transaction_count: int = 0
+    months_analyzed_count: int = 0
+    jev_decision: Optional[Dict[str, Any]] = None
+    model_diagnostics: Optional[List[Dict[str, Any]]] = None
     analysis_completed_at: Optional[datetime] = None
 
 

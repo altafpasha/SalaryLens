@@ -48,6 +48,14 @@ async def health_check(db: AsyncSession = Depends(get_db_session)) -> HealthResp
 
     overall_status = "healthy" if (db_connected and storage_ready) else "degraded"
 
+    # Check local LLM runtime reachability
+    local_available = False
+    try:
+        from app.services.llm.client import LocalLLMClient
+        local_available = await LocalLLMClient().is_available()
+    except Exception:
+        local_available = False
+
     return HealthResponse(
         status=overall_status,
         environment=settings.ENVIRONMENT,
@@ -60,5 +68,9 @@ async def health_check(db: AsyncSession = Depends(get_db_session)) -> HealthResp
             salary_finder=settings.SALARY_FINDER_MODEL,
             decision_engine=settings.DECISION_MODEL,
             embedding=settings.EMBEDDING_MODEL,
+            ocr_engine=getattr(settings, "OCR_ENGINE", "hybrid_indra"),
+            local_llm_provider=getattr(settings, "LOCAL_LLM_PROVIDER", "ollama"),
+            local_llm_model=getattr(settings, "LOCAL_LLM_MODEL", "qwen3.5-9b-uncensored:latest"),
+            local_llm_available=local_available,
         ),
     )

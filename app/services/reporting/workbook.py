@@ -39,6 +39,13 @@ class ExcelWorkbookGenerator:
     )
 
     @classmethod
+    def _clean_currency(cls, curr: Any) -> str:
+        """Ensures reporting currency is standardized to INR."""
+        if not curr or str(curr).upper().strip() in ("USD", "NULL", "NONE", ""):
+            return "INR"
+        return str(curr).upper().strip()
+
+    @classmethod
     def _apply_sheet_styling(cls, ws, max_col: int):
         """Applies auto column widths and freeze panes."""
         ws.views.sheetView[0].showGridLines = True
@@ -223,14 +230,16 @@ class ExcelWorkbookGenerator:
         # Exclusion reasons breakdown
         exclusion_reasons = filtering_stats.get("exclusion_counts_by_reason", {})
         for reason, count in exclusion_reasons.items():
-            rows.append((f"  └─ Excluded: {reason}", count))
+            clean_reason = str(reason).replace("USD", "INR").replace("$", "₹")
+            rows.append((f"  └─ Excluded: {clean_reason}", count))
 
         rows.extend([
             ("Potential Salary Transactions", included_count),
+            ("Reporting Currency", "INR (₹)"),
             ("Deterministic Validation Status", getattr(statement, "workbook_validation_status", "Verified")),
             ("Salary Analysis Status", salary_status),
             ("AI Tokens Consumed", ai_tokens),
-            ("AI Total Cost (USD)", f"${float(ai_cost):.4f}"),
+            ("AI Total Cost (INR)", f"₹{float(ai_cost) * 86.0:.2f}"),
             ("Workbook Generation Timestamp", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")),
         ])
 
@@ -338,14 +347,14 @@ class ExcelWorkbookGenerator:
                 float(tx["balance"]) if tx.get("balance") is not None else "",
                 sanitize_excel_formula(tx.get("category", "")),
                 sanitize_excel_formula(tx.get("chqno", "")),
-                tx.get("currency", "USD"),
+                cls._clean_currency(tx.get("currency")),
                 tx.get("page_number", 1),
                 tx.get("extraction_method", "native"),
                 float(tx["confidence"]) if tx.get("confidence") is not None else 1.0,
                 tx.get("validation_status", "valid"),
                 sanitize_excel_formula(tx.get("validation_warnings", "")),
                 "TRUE" if tx.get("included_in_salary_analysis") else "FALSE",
-                sanitize_excel_formula(tx.get("exclusion_reason", "")),
+                sanitize_excel_formula((tx.get("exclusion_reason") or "").replace("USD", "INR").replace("$", "₹")),
             ]
             ws.append(row)
 
@@ -393,11 +402,11 @@ class ExcelWorkbookGenerator:
                 float(cr) if cr is not None else "",
                 tx.get("transaction_direction", "CREDIT"),
                 sanitize_excel_formula(tx.get("candidate_employer", "")),
-                tx.get("currency", "USD"),
+                cls._clean_currency(tx.get("currency")),
                 tx.get("page_number", 1),
                 float(tx["confidence"]) if tx.get("confidence") is not None else 1.0,
                 tx.get("validation_status", "valid"),
-                sanitize_excel_formula(tx.get("inclusion_reason", "")),
+                sanitize_excel_formula((tx.get("inclusion_reason") or "").replace("USD", "INR").replace("$", "₹")),
             ]
             ws.append(row)
 
@@ -535,6 +544,9 @@ class ExcelWorkbookGenerator:
             is_review_req = False
             ai_exp = f"[Human Reviewer Confirmed: {reviewer_decision.get('review_notes', 'Approved')}] {ai_exp}"
 
+        if ai_exp:
+            ai_exp = ai_exp.replace("$", "₹")
+
         for group in candidate_groups:
             # 1. Summary Row for the Candidate Group
             grp_employer = getattr(group, "employer_name", "")
@@ -559,26 +571,27 @@ class ExcelWorkbookGenerator:
                 "CANDIDATE_SUMMARY",
                 str(getattr(group, "id", "")),
                 sanitize_excel_formula(grp_employer),
-                "",  # empty on candidate summary
-                "",  # empty on candidate summary
-                "",  # empty on candidate summary
-                getattr(transactions[0], "currency", "USD") if transactions else "USD",
-                "",  # empty on candidate summary
-                analysis_run.salary_status if analysis_run else "evaluated",
-                1.0,
-                f"Consolidated Candidate Group ({len(sup_tx_ids)} credits across {months_count} months)",
-                ", ".join(sup_tx_ids),
-                "Monthly (Regular)" if getattr(group, "recurrence_score", 0) > Decimal("0.8") else "Variable",
-                avg_amt,
-                med_amt,
-                min_amt,
-                max_amt,
-                months_count,
-                missing_months,
-                sanitize_excel_formula(ai_exp),
-                "YES" if is_review_req else "NO",
-                "; ".join(getattr(analysis_run, "reason_codes", []) or []) if analysis_run else "",
-                "VALIDATED_BY_PYTHON_ENGINE",
+                "",  # empty on candidate summary (supporting_transaction_id)
+                "",  # empty on candidate summary (transaction_date)
+                "",  # empty on candidate summary (narration)
+                avg_amt,  # Col 7: salary_credit_amount
+                "INR",  # Col 8: currency
+                "",  # Col 9: suspected_salary_month
+                analysis_run.salary_status if analysis_run else "evaluated",  # Col 10: candidate_status
+                1.0,  # Col 11: classification_confidence
+                f"Consolidated Candidate Group ({len(sup_tx_ids)} credits across {months_count} months)",  # Col 12: evidence_reason
+                ", ".join(sup_tx_ids),  # Col 13: supporting_transaction_ids
+                "Monthly (Regular)" if getattr(group, "recurrence_score", 0) > Decimal("0.8") else "Variable",  # Col 14: detected_frequency
+                avg_amt,  # Col 15: average_monthly_salary
+                med_amt,  # Col 16: median_monthly_salary
+                min_amt,  # Col 17: minimum_monthly_salary
+                max_amt,  # Col 18: maximum_monthly_salary
+                months_count,  # Col 19: months_with_salary
+                missing_months,  # Col 20: missing_months
+                sanitize_excel_formula(ai_exp),  # Col 21: AI_explanation
+                "YES" if is_review_req else "NO",  # Col 22: review_required
+                "; ".join(getattr(analysis_run, "reason_codes", []) or []) if analysis_run else "",  # Col 23: review_reason
+                "VALIDATED_BY_PYTHON_ENGINE",  # Col 24: validation_status
             ]
             ws.append(summary_row)
 
@@ -588,7 +601,7 @@ class ExcelWorkbookGenerator:
                 c.fill = cls.CANDIDATE_SUMMARY_FILL
                 c.font = Font(name="Calibri", size=10, bold=True)
                 c.border = cls.BORDER_THIN
-                if col_idx in (14, 15, 16, 17) and isinstance(c.value, (int, float)):
+                if col_idx in (7, 15, 16, 17, 18) and isinstance(c.value, (int, float)):
                     c.number_format = "#,##0.00"
 
             curr_row += 1
@@ -611,7 +624,7 @@ class ExcelWorkbookGenerator:
                     tx_date_str,
                     sanitize_excel_formula(tx_record.get("raw_description") or tx_record.get("description", "")),
                     float(cr_amt) if cr_amt is not None else 0.0,
-                    tx_record.get("currency", "USD"),
+                    cls._clean_currency(tx_record.get("currency")),
                     month_label,
                     "confirmed_credit",
                     float(tx_record.get("confidence") or 1.0),

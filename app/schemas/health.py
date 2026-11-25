@@ -10,6 +10,10 @@ class ConfiguredModels(BaseModel):
     salary_finder: str = Field(..., description="Configured Salary Finder model identifier")
     decision_engine: str = Field(..., description="Configured Jev Decision Engine model identifier")
     embedding: str = Field(..., description="Configured Embedding model identifier")
+    ocr_engine: str = Field("hybrid_indra", description="Configured document OCR engine")
+    local_llm_provider: str = Field("ollama", description="Configured local LLM inference provider")
+    local_llm_model: str = Field("qwen3.5-9b-uncensored:latest", description="Configured local LLM model")
+    local_llm_available: bool = Field(False, description="Whether local inference engine is reachable")
 
 
 class HealthResponse(BaseModel):

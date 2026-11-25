@@ -41,3 +41,31 @@ class DashboardSummaryResponse(BaseModel):
     pending_reviews_count: int
     average_monthly_salary_usd: Decimal
     total_ai_spend_usd: Decimal
+
+
+class EngineSettingsResponse(BaseModel):
+    ocr_engine: str
+    local_llm_provider: str
+    local_llm_model: str
+    salary_finder_model: str
+    decision_model: str
+    available_ocr_engines: List[str] = ["hybrid_indra", "indra", "native"]
+    available_local_models: List[str] = [
+        "qwen2.5:1.5b",
+        "qwen3.5-9b-uncensored:latest",
+        "llama3.2:3b",
+        "gemma4:12b",
+    ]
+    available_cloud_models: List[str] = [
+        "google/gemma-4-31b-it:free",
+        "anthropic/claude-3.5-sonnet",
+        "openai/gpt-4o-mini",
+    ]
+
+
+class EngineSettingsUpdate(BaseModel):
+    ocr_engine: Optional[str] = None
+    local_llm_provider: Optional[str] = None
+    local_llm_model: Optional[str] = None
+    salary_finder_model: Optional[str] = None
+    decision_model: Optional[str] = None

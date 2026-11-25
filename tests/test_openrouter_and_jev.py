@@ -47,6 +47,7 @@ async def test_budget_exceeded_raises():
 async def test_demo_mode_simulation(monkeypatch):
     from app.core.config import settings
     monkeypatch.setattr(settings, "DEMO_MODE", True)
+    monkeypatch.setattr(settings, "AI_EVALUATION_CACHE_ENABLED", False)
     client = OpenRouterClient()
     result = await client.generate_chat_completion(
         messages=[{"role": "user", "content": "Extract transactions"}],

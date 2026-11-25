@@ -37,7 +37,11 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "http://localhost:8000"
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8000",
+        "http://localhost:8001",
+        "http://localhost:8080",
     ]
 
     # Database
@@ -55,6 +59,7 @@ class Settings(BaseSettings):
 
     # Private Storage
     STORAGE_ROOT: str = "./storage"
+    STORAGE_BASE_DIR: str = "./storage"
     UPLOAD_DIR: str = "./storage/uploads"
     RENDER_DIR: str = "./storage/renders"
 
@@ -71,9 +76,20 @@ class Settings(BaseSettings):
     OPENROUTER_SITE_URL: str = "http://localhost:8000"
 
     # Model Configuration
-    SALARY_FINDER_MODEL: str = "anthropic/claude-3.5-sonnet"
-    DECISION_MODEL: str = "openai/gpt-4o-mini"
+    SALARY_FINDER_MODEL: str = "google/gemma-4-31b-it:free"
+    DECISION_MODEL: str = "google/gemma-4-31b-it:free"
     EMBEDDING_MODEL: str = "text-embedding-3-small"
+
+    # Local LLM & Inference Runtime Configuration
+    LOCAL_LLM_PROVIDER: str = "ollama"  # "ollama" | "openrouter" | "auto"
+    LOCAL_LLM_BASE_URL: str = "http://localhost:11434"
+    LOCAL_LLM_MODEL: str = "qwen3.5-9b-uncensored:latest"
+    LOCAL_LLM_TIMEOUT_SECONDS: float = 90.0
+
+    # OCR Engine Configuration
+    OCR_ENGINE: str = "hybrid_indra"  # "hybrid_indra" | "indra" | "native"
+    INDRA_DPI: float = 200.0
+    INDRA_THREADS: int = 4
 
     # AI Cost Limits & Timeouts
     MAX_AI_COST_USD_PER_STATEMENT: float = 1.50
@@ -99,6 +115,13 @@ class Settings(BaseSettings):
 
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 60
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def parse_debug(cls, v):
+        if isinstance(v, str):
+            return v.lower() in ("true", "1", "yes", "on", "t")
+        return bool(v)
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

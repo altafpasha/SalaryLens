@@ -317,10 +317,15 @@ class FinancialValidationEngine:
             overall_status = "insufficient_evidence"
         else:
             primary = candidate_groups[0]
-            # Check for multiple competing candidates
+            primary.is_primary = True
+
+            # Check for multiple competing candidates with significant financial scale
+            min_competing_threshold = min(Decimal("10000.00"), primary.average_amount * Decimal("0.40"))
             competing_groups = [
                 g for g in candidate_groups[1:]
-                if g.recurrence_score >= Decimal("0.650") and len(g.months) >= 2
+                if g.recurrence_score >= Decimal("0.650")
+                and len(g.months) >= 2
+                and g.average_amount >= min_competing_threshold
             ]
 
             if competing_groups:

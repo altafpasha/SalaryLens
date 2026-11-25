@@ -9,7 +9,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, delete
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.models.statement import Statement
@@ -27,6 +27,7 @@ from app.services.salary_detection.filter import TransactionFilterService
 from app.services.retrieval.rag import RAGEvidenceRetriever
 from app.services.decision_engine.jev import JevDecisionEngine
 from app.services.reporting.workbook import ExcelWorkbookGenerator
+from app.schemas.openrouter import AIModelCallResult, JevDecisionResponse
 from app.workers.celery_app import celery_app
 
 logger = logging.getLogger("salarylens.tasks")
@@ -148,24 +149,43 @@ async def run_statement_processing_pipeline(statement_id_str: str, organization_
 
             # 5. Save Extracted Transactions to Database (preserving ALL transactions)
             # Remove any previously saved transactions for this statement (idempotency)
-            existing_tx_q = await db.execute(select(Transaction).where(Transaction.statement_id == stmt_id))
-            for old_tx in existing_tx_q.scalars().all():
-                await db.delete(old_tx)
+            await db.execute(delete(Transaction).where(Transaction.statement_id == stmt_id))
             await db.flush()
 
             db_transactions: list[Transaction] = []
             for item in annotated_txs:
                 try:
-                    tx_date = datetime.strptime(str(item["transaction_date"])[:10], "%Y-%m-%d").date()
+                    raw_dt = str(item["transaction_date"])
+                    parsed_dt = DocumentExtractor._parse_date(raw_dt)
+                    if parsed_dt:
+                        tx_date = datetime.strptime(parsed_dt, "%Y-%m-%d").date()
+                    else:
+                        tx_date = datetime.strptime(raw_dt[:10], "%Y-%m-%d").date()
                 except Exception:
                     tx_date = datetime.now(timezone.utc).date()
 
                 val_date = None
                 if item.get("value_date"):
                     try:
-                        val_date = datetime.strptime(str(item["value_date"])[:10], "%Y-%m-%d").date()
+                        raw_vdt = str(item["value_date"])
+                        parsed_vdt = DocumentExtractor._parse_date(raw_vdt)
+                        if parsed_vdt:
+                            val_date = datetime.strptime(parsed_vdt, "%Y-%m-%d").date()
+                        else:
+                            val_date = datetime.strptime(raw_vdt[:10], "%Y-%m-%d").date()
                     except Exception:
                         pass
+
+                def _sanitize_db_amount(v) -> Optional[Decimal]:
+                    if v is None:
+                        return None
+                    try:
+                        d = Decimal(str(v))
+                        if abs(d) >= Decimal("10000000000"):
+                            return None
+                        return d.quantize(Decimal("0.01"))
+                    except Exception:
+                        return None
 
                 tx_uuid = uuid.uuid4()
                 item["id"] = tx_uuid
@@ -178,10 +198,10 @@ async def run_statement_processing_pipeline(statement_id_str: str, organization_
                     value_date=val_date,
                     raw_description=item["description"],
                     normalized_description=item["description"][:500],
-                    credit_amount=item.get("credit_amount"),
-                    debit_amount=item.get("debit_amount"),
-                    balance=item.get("balance"),
-                    currency=item.get("currency", "USD"),
+                    credit_amount=_sanitize_db_amount(item.get("credit_amount")),
+                    debit_amount=_sanitize_db_amount(item.get("debit_amount")),
+                    balance=_sanitize_db_amount(item.get("balance")),
+                    currency="INR" if item.get("currency") in (None, "", "USD") else item.get("currency"),
                     page_number=item.get("page_number", 1),
                     transaction_direction=item.get("transaction_direction"),
                     category=item.get("category"),
@@ -250,9 +270,7 @@ async def run_statement_processing_pipeline(statement_id_str: str, organization_
 
             # 8. Save Salary Candidate Groups and Candidates
             # Clean up old candidate groups for idempotency
-            old_groups_q = await db.execute(select(SalaryCandidateGroup).where(SalaryCandidateGroup.statement_id == stmt_id))
-            for old_grp in old_groups_q.scalars().all():
-                await db.delete(old_grp)
+            await db.execute(delete(SalaryCandidateGroup).where(SalaryCandidateGroup.statement_id == stmt_id))
             await db.flush()
 
             saved_candidate_groups: list[SalaryCandidateGroup] = []
@@ -352,10 +370,21 @@ async def run_statement_processing_pipeline(statement_id_str: str, organization_
             if not primary_employer and fin_result.candidate_groups:
                 primary_employer = fin_result.candidate_groups[0].employer_name
 
+            if primary_employer:
+                matched_grp = False
+                for grp in saved_candidate_groups:
+                    if grp.employer_name.upper() == primary_employer.upper() or primary_employer.upper() in grp.employer_name.upper():
+                        grp.is_primary = True
+                        matched_grp = True
+                        break
+                if not matched_grp and saved_candidate_groups:
+                    saved_candidate_groups[0].is_primary = True
+            elif saved_candidate_groups:
+                saved_candidate_groups[0].is_primary = True
+            await db.flush()
+
             # Clean up old analysis runs for idempotency
-            old_runs_q = await db.execute(select(AnalysisRun).where(AnalysisRun.statement_id == stmt_id))
-            for old_run in old_runs_q.scalars().all():
-                await db.delete(old_run)
+            await db.execute(delete(AnalysisRun).where(AnalysisRun.statement_id == stmt_id))
             await db.flush()
 
             analysis_run = AnalysisRun(
@@ -415,6 +444,7 @@ async def run_statement_processing_pipeline(statement_id_str: str, organization_
             statement.workbook_generated_at = datetime.now(timezone.utc)
 
             # 13. Update Statement Final Status
+            statement.error_message = None
             if decision.requires_human_review:
                 statement.status = "requires_human_review"
             else:

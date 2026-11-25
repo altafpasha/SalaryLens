@@ -1,0 +1,13 @@
+{
+  "name": "salarylens",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SalaryLens AI - AI Bank Statement Salary Detection & Verification Engine",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down"
+  }
+}
+

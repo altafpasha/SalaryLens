@@ -118,18 +118,23 @@ The API is now accessible at:
 
 ---
 
-## Running with Docker Compose
+## Running with Docker Compose (Full Stack: Frontend + Backend + Worker + DB + Redis)
 
-To start PostgreSQL (with pgvector), Redis, the FastAPI application, and Celery worker:
+To launch the complete SalaryLens platform (Vite/React Frontend, FastAPI API, Celery Worker, PostgreSQL with pgvector, and Redis):
 
 ```bash
-docker-compose up --build -d
+docker compose up --build
 ```
 
-Check service status:
+Once up, access the platform at:
+- **Web UI & Dashboard:** [http://localhost:3000](http://localhost:3000)
+- **FastAPI Swagger Docs:** [http://localhost:3000/docs](http://localhost:3000/docs) (or direct on port 8001: [http://localhost:8001/docs](http://localhost:8001/docs))
+- **API Health Check:** [http://localhost:8001/api/v1/health](http://localhost:8001/api/v1/health)
+
+Check service status and logs:
 ```bash
-docker-compose ps
-docker-compose logs -f api
+docker compose ps
+docker compose logs -f api frontend
 ```
 
 ---
@@ -216,6 +221,85 @@ pytest -v
   - **Idempotency & Partial Failure Handling**:
     - Initial workbook created post-extraction; finalized post-AI. Accessible even if AI classification fails.
     - Synchronized with human reviewer overrides.
+- [x] **Phase 10: Indra OCR Migration & Local LLM Benchmarking**
+  - **Hybrid Document OCR Pipeline (`HybridDocumentPipeline`)**:
+    - Native PyMuPDF extraction fast-path for clean digital statements (< 50ms per document).
+    - CPU-native ONNX **Indra OCR** (`indra-ocr`) engine for scanned pages, image-based statements, and distorted/noisy documents.
+    - Normalized Document Intermediate Representation (`NormalizedDocument`, `NormalizedPage`, `NormalizedBlock`, `NormalizedLine`).
+    - Robust tabular data extraction via `TableParser` supporting Markdown pipes and HTML table cells with numerical overflow protections.
+    - Page order preservation, source page tracking, and cross-engine transaction deduplication.
+  - **Unified Local LLM Inference Engine (`LocalLLMClient`)**:
+    - Local inference via Ollama (`http://localhost:11434`) with Apple Silicon Metal GPU acceleration and token telemetry.
+    - GGUF model ingestion from external storage (`/Volumes/ProjectZero/models`).
+    - Automatic fallback to OpenRouter (`google/gemma-4-31b-it:free`) on local timeout or memory pressure.
+    - Strict deterministic financial grounding: Python `FinancialValidationEngine` serves as the sole mathematical authority for cadence, recurrence, variance, and reversal calculations.
+  - **Local Model Benchmark Runner (`scripts/benchmark_models.py`)**:
+    - Evaluated 4 parameter tiers across 10 synthetic bank statement fixtures:
+      - `qwen2.5:1.5b` (1.5B): 90.0% accuracy, 100% precision/recall, 1,061 ms latency, 1.43 GB VRAM.
+      - `qwen3.5-9b-uncensored:latest` (9B, external SSD): 90.0% accuracy, 100% precision/recall, 22,804 ms latency, 6.23 GB VRAM.
+      - `llama3.2:3b` (3B): 80.0% accuracy, 100% precision, 85.7% recall, 1,250 ms latency, 3.74 GB VRAM.
+      - `gemma4:12b` (12B): 80.0% accuracy, 85.7% precision/recall, 46,182 ms latency, 1.1 GB VRAM.
+
+---
+
+## Local LLM Setup & Indra OCR Integration
+
+### 1. Local LLM Runtime (Ollama)
+
+SalaryLens AI supports zero-cost local LLM inference with Metal GPU offloading via Ollama:
+
+```bash
+# Verify Ollama is running
+curl -s http://localhost:11434/api/tags
+
+# Pull recommended lightweight model (Tier 1: 1.5B parameters, ~1.0 GB RAM)
+ollama pull qwen2.5:1.5b
+
+# Pull balanced model (Tier 2: 3B parameters, ~2.0 GB RAM)
+ollama pull llama3.2:3b
+```
+
+### 2. Loading Models from External SSD (`/Volumes/ProjectZero/models`)
+
+For deep reasoning models (e.g., Qwen 2.5/3.5 9B/14B Q4_K_M GGUFs) stored on an external SSD:
+
+```bash
+# Navigate to the external models directory
+cd /Volumes/ProjectZero/models
+
+# Create model from Modelfile pointing to GGUF on SSD
+ollama create qwen3.5-9b-uncensored -f Modelfile.qwen3.5-9b
+
+# Verify the model is registered
+ollama list
+```
+
+### 3. Running Model Benchmarks
+
+A fully automated, reproducible benchmark runner tests all configured models across all 10 standard synthetic bank statement fixtures:
+
+```bash
+# Run benchmark across all installed models
+python scripts/benchmark_models.py \
+  --models qwen2.5:1.5b llama3.2:3b qwen3.5-9b-uncensored:latest gemma4:12b \
+  --output benchmark_results.json \
+  --report benchmark_report.md
+```
+
+### 4. Local Model Benchmark Leaderboard
+
+| Model | Tier | Accuracy | Precision | Recall | Hallucinations | Avg Latency | Peak VRAM | Cost (INR) |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| **qwen2.5:1.5b** | 1.5B | **90.0%** | **100.0%** | **100.0%** | **0** | **1,061 ms** | **1.43 GB** | **₹ 0.00** |
+| **qwen3.5-9b-uncensored** | 9B (SSD) | **90.0%** | **100.0%** | **100.0%** | **0** | 22,804 ms | 6.23 GB | **₹ 0.00** |
+| **llama3.2:3b** | 3B | 80.0% | 100.0% | 85.7% | 0 | 1,250 ms | 3.74 GB | **₹ 0.00** |
+| **gemma4:12b** | 12B | 80.0% | 85.7% | 85.7% | 0 | 46,182 ms | 1.1 GB | **₹ 0.00** |
+
+### 5. Recommended Production Routing (Hybrid 3-Tier Architecture)
+
+1. **Tier 1 — Fast-Path (Sub-Second):** Native text or Indra OCR + `qwen2.5:1.5b` handles standard recurring salary credits with zero token cost.
+2. **Tier 2 — Reasoning Escalation:** When candidate confidence < 0.85, multiple candidate employers exist, or irregular variances are flagged, escalate to `qwen3.5-9b-uncensored:latest` or `gemma4:12b`.
+3. **Tier 3 — Cloud Fallback:** If local inference is unreachable or times out, fail over seamlessly to OpenRouter (`google/gemma-4-31b-it:free`).
 
 ---
 

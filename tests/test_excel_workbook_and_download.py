@@ -179,7 +179,7 @@ def test_generate_initial_and_finalized_5_sheet_workbook(tmp_path: Path):
     # Row 2: Candidate summary
     assert ws_res.cell(row=2, column=1).value == "CANDIDATE_SUMMARY"
     assert ws_res.cell(row=2, column=3).value == "ACME TECH"
-    assert ws_res.cell(row=2, column=14).value == 5200.00
+    assert ws_res.cell(row=2, column=15).value == 5200.00
 
     # Row 3: Supporting individual transaction
     assert ws_res.cell(row=3, column=1).value == "SUPPORTING_TRANSACTION"
@@ -256,3 +256,42 @@ async def test_download_endpoint_authorization_and_isolation(client: httpx.Async
     fake_id = str(uuid.uuid4())
     fake_dl = await client.get(f"/api/v1/statements/{fake_id}/download", headers=headers_a)
     assert fake_dl.status_code == 404
+
+    # 9. Verify Agent role can download within Tenant A
+    agent_reg = await client.post("/api/v1/auth/register", json={
+        "email": f"agent_download_{ts}@banka.com",
+        "password": "SecurePassword123!",
+        "full_name": "Standard Agent",
+        "organization_name": f"Agent Bank {ts}",
+        "role": "agent",
+    })
+    assert agent_reg.status_code == 201
+    agent_token = agent_reg.json()["access_token"]
+    agent_headers = {"Authorization": f"Bearer {agent_token}"}
+    agent_org_id = agent_reg.json()["organization_id"]
+
+    # Upload & process statement for agent
+    up_agent = await client.post(
+        "/api/v1/statements",
+        files={"file": ("agent_stmt.pdf", pdf_bytes, "application/pdf")},
+        data={"duration_months": "3"},
+        headers=agent_headers,
+    )
+    assert up_agent.status_code == 202
+    agent_stmt_id = up_agent.json()["statement_id"]
+    await run_statement_processing_pipeline(str(agent_stmt_id), str(agent_org_id))
+
+    # Agent role downloads workbook (Must NOT be 403!)
+    agent_dl = await client.get(f"/api/v1/statements/{agent_stmt_id}/download", headers=agent_headers)
+    assert agent_dl.status_code == 200
+    assert agent_dl.headers["content-type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    # 10. Check statement results contains INR currency and Jev decision metadata
+    res_resp = await client.get(f"/api/v1/statements/{agent_stmt_id}/results", headers=agent_headers)
+    assert res_resp.status_code == 200
+    res_data = res_resp.json()
+    assert res_data["currency"] == "INR"
+    assert "confidence_score" in res_data
+    assert "jev_decision" in res_data
+    assert res_data["jev_decision"]["status"] == res_data["status"]
+    assert "model_diagnostics" in res_data

@@ -23,11 +23,11 @@ class Transaction(Base, TimestampMixin):
     raw_description: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_description: Mapped[str] = mapped_column(String(500), nullable=False)
 
-    # Use Numeric(14, 2) for exact financial currency values
-    credit_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True, default=None)
-    debit_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True, default=None)
-    balance: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True, default=None)
-    currency: Mapped[str] = mapped_column(String(10), default="USD", nullable=False)
+    # Use Numeric(20, 2) for exact financial currency values
+    credit_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 2), nullable=True, default=None)
+    debit_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 2), nullable=True, default=None)
+    balance: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 2), nullable=True, default=None)
+    currency: Mapped[str] = mapped_column(String(10), default="INR", nullable=False)
 
     page_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
